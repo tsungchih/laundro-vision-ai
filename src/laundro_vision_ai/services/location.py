@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 
 import requests
 
+from laundro_vision_ai.core.config import get_settings
+
 
 class MapProvider(ABC):
     @abstractmethod
@@ -79,3 +81,24 @@ class OSMMapProvider(MapProvider):
             "cvs_mcd_in_200m": cvs_mcd,
             "has_starbucks": has_starbucks,
         }
+
+
+def get_map_provider() -> MapProvider:
+    provider = get_settings().MAP_PROVIDER
+    if provider == "MOCK":
+        return MockMapProvider()
+    return OSMMapProvider()
+
+
+def calculate_q1_score(has_starbucks: bool, cvs_mcd: list[str]) -> int:
+    if has_starbucks or not cvs_mcd:
+        return 1
+
+    has_mcd = any("McDonald" in name or "麥當勞" in name for name in cvs_mcd)
+    if has_mcd or len(cvs_mcd) >= 2:
+        return 5
+
+    if len(cvs_mcd) == 1:
+        return 3
+
+    return 1

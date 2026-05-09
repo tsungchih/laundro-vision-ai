@@ -1,9 +1,11 @@
+import os
 from unittest.mock import patch
 
 import respx
 from httpx import Response
 
-from laundro_vision_ai.services.location import MockMapProvider, OSMMapProvider
+from laundro_vision_ai.core.config import get_settings
+from laundro_vision_ai.services.location import MockMapProvider, OSMMapProvider, calculate_q1_score, get_map_provider
 
 
 def test_mock_provider_geocode():
@@ -49,3 +51,20 @@ def test_osm_provider_enrich(mock_post):
     assert result["competitors_data"] == ["Wash"]
     assert "7-11" in result["cvs_mcd_in_200m"]
     assert result["has_starbucks"] is True
+
+
+def test_get_map_provider():
+    os.environ["MAP_PROVIDER"] = "MOCK"
+    get_settings.cache_clear()  # Ensure settings are reloaded
+    provider = get_map_provider()
+    assert isinstance(provider, MockMapProvider)
+    del os.environ["MAP_PROVIDER"]
+    get_settings.cache_clear()
+
+
+def test_calculate_q1_score():
+    assert calculate_q1_score(True, []) == 1
+    assert calculate_q1_score(False, []) == 1
+    assert calculate_q1_score(False, ["7-11"]) == 3
+    assert calculate_q1_score(False, ["7-11", "FamilyMart"]) == 5
+    assert calculate_q1_score(False, ["McDonald's"]) == 5
