@@ -1,10 +1,11 @@
 import os
 from unittest.mock import patch
 
+import pytest
+import requests
 import respx
 from httpx import Response
 
-from laundro_vision_ai.core.config import get_settings
 from laundro_vision_ai.services.location import MockMapProvider, OSMMapProvider, calculate_q1_score, get_map_provider
 
 
@@ -53,13 +54,16 @@ def test_osm_provider_enrich(mock_post):
     assert result["has_starbucks"] is True
 
 
-def test_get_map_provider():
-    os.environ["MAP_PROVIDER"] = "MOCK"
-    get_settings.cache_clear()  # Ensure settings are reloaded
+def test_get_map_provider_mock():
+    os.environ["MAP_PROVIDER"] = "MOCK"  # Explicitly set for this test
     provider = get_map_provider()
     assert isinstance(provider, MockMapProvider)
-    del os.environ["MAP_PROVIDER"]
-    get_settings.cache_clear()
+
+
+def test_get_map_provider_osm():
+    # Default behavior is OSM, so no env var needed
+    provider = get_map_provider()
+    assert isinstance(provider, OSMMapProvider)
 
 
 def test_calculate_q1_score():
@@ -68,3 +72,65 @@ def test_calculate_q1_score():
     assert calculate_q1_score(False, ["7-11"]) == 3
     assert calculate_q1_score(False, ["7-11", "FamilyMart"]) == 5
     assert calculate_q1_score(False, ["McDonald's"]) == 5
+
+
+@respx.mock
+def test_osm_provider_geocode_no_results():
+    respx.get("https://nominatim.openstreetmap.org/search").mock(return_value=Response(200, json=[]))
+    provider = OSMMapProvider()
+    with pytest.raises(ValueError, match="Could not geocode address"):
+        provider.geocode("NonExistent Address")
+
+
+@patch("requests.get")
+def test_osm_provider_geocode_network_error(mock_get):
+    mock_get.side_effect = requests.exceptions.RequestException
+    provider = OSMMapProvider()
+    with pytest.raises(requests.exceptions.RequestException):
+        provider.geocode("Taipei 101")
+
+
+@patch("requests.post")
+def test_osm_provider_enrich_network_error(mock_post):
+    mock_post.side_effect = requests.exceptions.RequestException
+    provider = OSMMapProvider()
+    with pytest.raises(requests.exceptions.RequestException):
+        provider.enrich_location(25.0, 121.0)
+
+
+def test_calculate_q1_score_with_starbucks_in_cvs_mcd():
+    # Although enrich_location separates Starbucks, testing this branch ensures robustness
+    # and covers a potential edge case if data source changes.
+    assert calculate_q1_score(False, ["Starbucks Coffee"]) == 3
+    assert calculate_q1_score(False, ["McDonald's", "Starbucks Coffee"]) == 5
+
+
+@patch("requests.post")
+def test_osm_provider_enrich_fast_food_not_mcdonalds(mock_post):
+    mock_post.return_value.status_code = 200
+    mock_post.return_value.json.return_value = {
+        "elements": [
+            {"tags": {"amenity": "fast_food", "name": "Burger King"}},
+        ]
+    }
+    mock_post.return_value.raise_for_status.return_value = None
+
+    provider = OSMMapProvider()
+    result = provider.enrich_location(25.0, 121.0)
+    assert "Burger King" not in result["cvs_mcd_in_200m"]
+    assert result["has_starbucks"] is False
+
+
+@patch("requests.post")
+def test_osm_provider_enrich_cafe_not_starbucks(mock_post):
+    mock_post.return_value.status_code = 200
+    mock_post.return_value.json.return_value = {
+        "elements": [
+            {"tags": {"amenity": "cafe", "name": "Local Cafe"}},
+        ]
+    }
+    mock_post.return_value.raise_for_status.return_value = None
+
+    provider = OSMMapProvider()
+    result = provider.enrich_location(25.0, 121.0)
+    assert result["has_starbucks"] is False

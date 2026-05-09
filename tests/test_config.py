@@ -9,8 +9,6 @@ def test_config_defaults():
 
 
 def test_config_override():
-    get_settings.cache_clear()
-    os.environ["MAP_PROVIDER"] = "MOCK"
+    os.environ["MAP_PROVIDER"] = "MOCK"  # Set for this test to explicitly override
     settings = get_settings()
     assert settings.MAP_PROVIDER == "MOCK"
-    del os.environ["MAP_PROVIDER"]
