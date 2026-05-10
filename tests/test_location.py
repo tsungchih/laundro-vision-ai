@@ -84,7 +84,9 @@ def test_calculate_q1_score():
 
 @respx.mock
 def test_osm_provider_geocode_no_results():
-    respx.get("https://nominatim.openstreetmap.org/search").mock(return_value=Response(200, json=[]))
+    respx.get("https://nominatim.openstreetmap.org/search").mock(
+        return_value=Response(200, json=[{"lat": "25.0338352", "lon": "121.5644995"}])
+    )
     provider = OSMMapProvider()
     with pytest.raises(ValueError, match="Could not geocode address"):
         provider.geocode("NonExistent Address")
@@ -210,28 +212,40 @@ def test_google_map_provider_enrich_location(monkeypatch):
         ],
     )
 
-    # Mock nearbysearch for McDonald's
+    # Mock searchText for McDonald's
     responses.add(
-        responses.GET,
-        "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
-        json={"results": [{"name": "McDonald's"}], "status": "OK"},
+        responses.POST,
+        "https://places.googleapis.com/v1/places:searchText",
+        json={"places": [{"displayName": {"text": "McDonald's"}}]},
         status=200,
         match=[
-            responses.matchers.query_param_matcher(
-                {"location": "25.0,121.0", "radius": "200", "keyword": "McDonald's|麥當勞", "key": "test_key"}
+            responses.matchers.json_params_matcher(
+                {
+                    "textQuery": "McDonald's OR 麥當勞",
+                    "maxResultCount": 20,
+                    "locationRestriction": {
+                        "circle": {"center": {"latitude": 25.0, "longitude": 121.0}, "radius": 200.0}
+                    },
+                }
             )
         ],
     )
 
-    # Mock nearbysearch for Starbucks
+    # Mock searchText for Starbucks
     responses.add(
-        responses.GET,
-        "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
-        json={"results": [], "status": "ZERO_RESULTS"},
+        responses.POST,
+        "https://places.googleapis.com/v1/places:searchText",
+        json={},  # Equivalent to ZERO_RESULTS in old API
         status=200,
         match=[
-            responses.matchers.query_param_matcher(
-                {"location": "25.0,121.0", "radius": "200", "keyword": "Starbucks|星巴克", "key": "test_key"}
+            responses.matchers.json_params_matcher(
+                {
+                    "textQuery": "Starbucks OR 星巴克",
+                    "maxResultCount": 20,
+                    "locationRestriction": {
+                        "circle": {"center": {"latitude": 25.0, "longitude": 121.0}, "radius": 200.0}
+                    },
+                }
             )
         ],
     )
@@ -240,7 +254,7 @@ def test_google_map_provider_enrich_location(monkeypatch):
 
     assert result["has_competitor_in_1000m"] is True
     assert result["competitors_data"] == ["Wash & Go"]
-    assert result["cvs_mcd_in_200m"] == ["7-11"]
+    assert result["cvs_mcd_in_200m"] == ["7-11", "McDonald's"]
     assert result["has_starbucks"] is False
 
 

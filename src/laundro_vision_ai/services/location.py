@@ -158,20 +158,39 @@ class GoogleMapProvider(MapProvider):
             places = resp_cvs.json().get("places", [])
             cvs_mcd.extend([p.get("displayName", {}).get("text") for p in places if p.get("displayName")])
 
-        # 3. McDonald's (200m) - Temporarily commented out for Task 1
-        # resp_mcd = requests.get(
-        #     base_url, params={"location": location_str, "radius": 200, "keyword": "McDonald's|麥當勞", "key": api_key}
-        # )
-        # if resp_mcd.status_code == 200 and resp_mcd.json().get("status") in ("OK", "ZERO_RESULTS"):
-        #     cvs_mcd.extend([r.get("name") for r in resp_mcd.json().get("results", [])])
+        # 3. McDonald's (200m)
+        search_text_url = "https://places.googleapis.com/v1/places:searchText"
+        payload_mcd = {
+            "textQuery": "McDonald's OR 麥當勞",
+            "maxResultCount": 20,
+            "locationRestriction": {
+                "circle": {
+                    "center": {"latitude": lat, "longitude": lng},
+                    "radius": 200.0,
+                }
+            },
+        }
+        resp_mcd = requests.post(search_text_url, headers=headers, json=payload_mcd)
+        if resp_mcd.status_code == 200:
+            places = resp_mcd.json().get("places", [])
+            cvs_mcd.extend([p.get("displayName", {}).get("text") for p in places if p.get("displayName")])
 
-        # 4. Starbucks (200m) - Temporarily commented out for Task 1
+        # 4. Starbucks (200m)
         has_starbucks = False
-        # resp_starbucks = requests.get(
-        #     base_url, params={"location": location_str, "radius": 200, "keyword": "Starbucks|星巴克", "key": api_key}
-        # )
-        # if resp_starbucks.status_code == 200 and resp_starbucks.json().get("status") == "OK":
-        #     has_starbucks = len(resp_starbucks.json().get("results", [])) > 0
+        payload_sb = {
+            "textQuery": "Starbucks OR 星巴克",
+            "maxResultCount": 20,
+            "locationRestriction": {
+                "circle": {
+                    "center": {"latitude": lat, "longitude": lng},
+                    "radius": 200.0,
+                }
+            },
+        }
+        resp_starbucks = requests.post(search_text_url, headers=headers, json=payload_sb)
+        if resp_starbucks.status_code == 200:
+            places = resp_starbucks.json().get("places", [])
+            has_starbucks = len(places) > 0
 
         return {
             "has_competitor_in_1000m": len(competitors) > 0,
